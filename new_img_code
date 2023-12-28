@@ -1,0 +1,125 @@
+@SuppressLint("Range")
+suspend fun Context.getAllPhotos(): PhotoData {
+    val photoList = ArrayList<Photo>()
+    val tempfolder = ArrayList<String>()
+    val folderList = ArrayList<PhotoFolder>()
+    val projection = arrayOf(
+        MediaStore.Images.Media.TITLE,
+        MediaStore.Images.Media.SIZE,
+        MediaStore.Images.Media._ID,
+        MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+        MediaStore.Images.Media.DATA,
+        MediaStore.Images.Media.DATE_ADDED,
+        MediaStore.Images.Media.MIME_TYPE,
+        MediaStore.Images.Media.BUCKET_ID
+    )
+
+    // Use a coroutine to perform the query in the background
+    return withContext(Dispatchers.IO) {
+        val cursor: Cursor? = contentResolver?.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection,
+            null, null, MediaStore.Images.Media.DATE_ADDED + " DESC"
+        )
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                val titleC = it.getString(it.getColumnIndex(MediaStore.Images.Media.TITLE))
+                val idC = it.getString(it.getColumnIndex(MediaStore.Images.Media._ID))
+                val folderC = it.getString(it.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME))
+                val folderIdC = it.getString(it.getColumnIndex(MediaStore.Images.Media.BUCKET_ID))
+                val sizeC = it.getString(it.getColumnIndex(MediaStore.Images.Media.SIZE))
+                val pathC = it.getString(it.getColumnIndex(MediaStore.Images.Media.DATA))
+                val mimeTypeC = it.getString(it.getColumnIndex(MediaStore.Images.Media.MIME_TYPE))
+
+                if (titleC != null && idC != null && folderC != null && folderIdC != null && pathC != null) {
+                    val file = File(pathC)
+                    val artUriC = Uri.fromFile(file)
+                    val photo = Photo(
+                        title = titleC, id = idC, folderName = folderC,
+                        size = sizeC ?: "0", path = pathC, artUri = artUriC
+                    )
+
+                    if (file.exists()) {
+                        photoList.add(photo)
+
+                        // Add folder if not added before
+                        if (!tempfolder.contains(folderC)) {
+                            tempfolder.add(folderC)
+                            folderList.add(PhotoFolder(id = folderIdC, folderName = folderC))
+                        }
+                    }
+                }
+            }
+        }
+        PhotoData(folderList, photoList)
+    }
+}
+
+
+@SuppressLint("Range")
+fun Context.getAllFolderPhoto(folderId:String):ArrayList<Photo>{
+    val tempList = ArrayList<Photo>()
+    val selection = MediaStore.Images.Media.BUCKET_ID + " like? "
+
+    val projection = arrayOf(
+        MediaStore.Images.Media.TITLE, MediaStore.Images.Media.SIZE,
+        MediaStore.Images.Media._ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME
+        , MediaStore.Images.Media.DATA, MediaStore.Images.Media.DATE_ADDED,
+        MediaStore.Images.Media.BUCKET_ID)
+    val cursor = this.contentResolver.query(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,projection,
+        selection, arrayOf(folderId), MediaStore.Images.Media.DATE_ADDED + " DESC")
+    if (cursor!=null)
+        if (cursor.moveToNext())
+            do {
+                val titleC =  cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.TITLE))?:"Unknown"
+                val idC =  cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media._ID))?:"Unknown"
+                val folderC =  cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME))?:"Internal Storage"
+                val sizeC =  cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.SIZE))?:"0"
+                val pathC =  cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA))?:"Unknown"
+                try {
+                    val file = File(pathC)
+                    val artUriC = Uri.fromFile(file)
+                    val photo = Photo(title = titleC,id = idC,folderName = folderC,
+                        size = sizeC,path = pathC,artUri = artUriC)
+                    if (file.exists()) tempList.add(photo)
+                }
+                catch (e:Exception){
+                    Log.e("TAG", "getAllVideo: $e" )
+                }
+            } while (cursor.moveToNext())
+    cursor?.close()
+    return tempList
+}
+
+@SuppressLint("Range")
+fun Context.getPhotoThumbnailUriForFolder(folderName: String): Uri? {
+    val projection = arrayOf(
+        MediaStore.Images.Media._ID,
+        MediaStore.Images.Media.DATA,
+        MediaStore.Images.Media.DISPLAY_NAME
+    )
+
+    val selection = "${MediaStore.Images.Media.DATA} like ?"
+    val selectionArgs = arrayOf("%$folderName%")
+
+    val cursor = this.contentResolver.query(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        selection,
+        selectionArgs,
+        "${MediaStore.Images.Media.DATE_ADDED} DESC"
+    )
+
+    if (cursor != null && cursor.moveToFirst()) {
+        val photoUri = ContentUris.withAppendedId(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            cursor.getLong(cursor.getColumnIndex(MediaStore.Images.Media._ID))
+        )
+        cursor.close()
+        return photoUri
+    }
+
+    cursor?.close()
+    return null
+}
